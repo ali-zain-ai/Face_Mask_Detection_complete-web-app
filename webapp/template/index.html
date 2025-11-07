@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Face Mask Detector</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Poppins', sans-serif;
+        }
+
+        body {
+            min-height: 100vh;
+            background: linear-gradient(135deg, #74ABE2, #5563DE);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: #fff;
+            overflow-x: hidden;
+        }
+
+        .container {
+            width: 95%;
+            max-width: 1200px;
+            background: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(15px);
+            border-radius: 20px;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+            padding: 40px;
+            text-align: center;
+            animation: fadeIn 1.2s ease-in-out;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 20px;
+            letter-spacing: 1px;
+        }
+
+        .section {
+            margin-top: 30px;
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.12);
+            border-radius: 15px;
+            transition: 0.3s;
+        }
+
+        .section:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: translateY(-3px);
+        }
+
+        input[type="file"] {
+            margin: 10px 0;
+            padding: 10px;
+            border: none;
+            border-radius: 8px;
+            background: #fff;
+            color: #333;
+            cursor: pointer;
+        }
+
+        button {
+            background: #1e90ff;
+            border: none;
+            padding: 10px 20px;
+            color: #fff;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+
+        button:hover {
+            background: #0d6efd;
+            transform: scale(1.05);
+        }
+
+        video {
+            margin-top: 20px;
+            width: 100%;
+            max-height: 500px;
+            border-radius: 15px;
+            object-fit: cover;
+            background: #000;
+        }
+
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            display: inline-block;
+            border-radius: 10px;
+            font-weight: bold;
+            font-size: 1.2rem;
+        }
+
+        .mask {
+            background: #4CAF50;
+            color: #fff;
+        }
+
+        .no-mask {
+            background: #e74c3c;
+            color: #fff;
+        }
+
+        .confidence {
+            margin-left: 10px;
+            font-size: 1rem;
+            color: #f1f1f1;
+        }
+
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 2rem;
+            }
+
+            button {
+                width: 100%;
+                margin-top: 10px;
+            }
+
+            .section {
+                padding: 15px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>😷 Face Mask Detector</h1>
+
+        <!-- Upload Image Section -->
+        <div class="section">
+            <h2>Upload Image</h2>
+            <form id="uploadForm" enctype="multipart/form-data">
+                <input type="file" id="imageFile" accept="image/*" required>
+                <button type="submit">Predict</button>
+            </form>
+            <div id="uploadResult" class="result" style="display:none;"></div>
+        </div>
+
+        <!-- Webcam Section -->
+        <div class="section">
+            <h2>Or Use Webcam (Real-time)</h2>
+            <video id="webcam" autoplay></video><br>
+            <button id="startBtn">Start</button>
+            <button id="stopBtn">Stop</button>
+            <div id="webcamResult" class="result" style="display:none;"></div>
+        </div>
+    </div>
+
+    <script>
+        // File upload predict
+        document.getElementById("uploadForm").addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const fileInput = document.getElementById("imageFile");
+            if (!fileInput.files.length) return alert("Please select an image first!");
+
+            const formData = new FormData();
+            formData.append("file", fileInput.files[0]);
+            const res = await fetch("/predict", { method: "POST", body: formData });
+            const data = await res.json();
+
+            const resultDiv = document.getElementById("uploadResult");
+            resultDiv.style.display = "inline-block";
+            resultDiv.className = "result " + (data.label === "Mask" ? "mask" : "no-mask");
+            resultDiv.innerHTML = `${data.label} <span class="confidence">(${(data.confidence * 100).toFixed(1)}%)</span>`;
+        });
+
+        // Webcam capture
+        const webcam = document.getElementById("webcam");
+        const startBtn = document.getElementById("startBtn");
+        const stopBtn = document.getElementById("stopBtn");
+        const webcamResult = document.getElementById("webcamResult");
+        let stream, interval;
+
+        startBtn.onclick = async () => {
+            stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            webcam.srcObject = stream;
+            interval = setInterval(captureFrame, 2000);
+        };
+
+        stopBtn.onclick = () => {
+            if (stream) stream.getTracks().forEach(track => track.stop());
+            clearInterval(interval);
+        };
+
+        async function captureFrame() {
+            const canvas = document.createElement("canvas");
+            canvas.width = webcam.videoWidth;
+            canvas.height = webcam.videoHeight;
+            const ctx = canvas.getContext("2d");
+            ctx.drawImage(webcam, 0, 0, canvas.width, canvas.height);
+            const imageBase64 = canvas.toDataURL("image/jpeg");
+
+            const res = await fetch("/predict", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ image: imageBase64 })
+            });
+            const data = await res.json();
+            webcamResult.style.display = "inline-block";
+            webcamResult.className = "result " + (data.label === "Mask" ? "mask" : "no-mask");
+            webcamResult.innerHTML = `${data.label} <span class="confidence">(${(data.confidence * 100).toFixed(1)}%)</span>`;
+        }
+    </script>
+</body>
+
+</html>
